@@ -1,0 +1,126 @@
+services:
+  app:
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    build:
+      context: deploy/docker
+      dockerfile: local.dockerfile
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+    container_name: sheypoor-app
+    restart: 'always'
+    tty: true
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - mariadb
+      - redis
+    networks:
+      - net
+    healthcheck:
+      test: [ "CMD", "php-fpm", "-t" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.26.2-alpine
+    restart: 'always'
+    container_name: sheypoor-nginx
+    tty: true
+    volumes:
+      - .:/var/www/html
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d/
+    depends_on:
+      - app
+    networks:
+      - net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: deploy/supervisor
+      dockerfile: supervisor.dockerfile
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+        - PROC_NUM=${PROC_NUM:-1}
+        - PROC_OFFLINE_SEARCH_NUM=${PROC_OFFLINE_SEARCH_NUM:-1}
+    container_name: sheypoor-worker
+    volumes:
+      - .:/var/www/html
+      - ./deploy/supervisor/my-supervisor.conf:/etc/supervisor/my-supervisor.conf
+    restart: 'always'
+    tty: true
+    working_dir: /var/www/html
+    depends_on:
+      - app
+    networks:
+      - net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: 'redis/redis-stack-server'
+    restart: 'always'
+    container_name: sheypoor-redis
+    volumes:
+      - redis:/data
+    networks:
+      - net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  mariadb:
+    image: 'mariadb:11.4.4'
+    container_name: sheypoor-mariadb
+    restart: 'always'
+    environment:
+      MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: '${DB_DATABASE}'
+      MYSQL_USER: '${DB_USERNAME}'
+      MYSQL_PASSWORD: '${DB_PASSWORD}'
+    volumes:
+      - mariadb:/var/lib/mysql
+    networks:
+      - net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis:
+    driver: local
+  mariadb:
+    driver: local
+
+networks:
+  net:
+    driver: bridge

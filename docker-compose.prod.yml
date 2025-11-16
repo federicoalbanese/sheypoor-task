@@ -1,0 +1,17 @@
+services:
+    app:
+        build:
+            context: deploy/docker
+            dockerfile: prod.dockerfile
+        volumes:
+            - ./deploy/php/php-prod.ini:/usr/local/etc/php/php.ini
+            - ./deploy/php/www.conf:/usr/local/etc/php-fpm.d/www.conf
+    redis:
+        ports:
+            - '${FORWARD_REDIS_PORT:-6380}:6379'
+    nginx:
+        ports:
+            - "81:80"
+    mariadb:
+        ports:
+            - "3307:3306"
